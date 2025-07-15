@@ -1,5 +1,6 @@
 # 数据读取模块
 import pandas as pd
+import re
 import os
 import glob
 from src.config import BILL_COLUMNS, EXPENSE_MAPPING, DEFAULT_EXPENSE, TRANSACTION_STATUS_MAPPING, DEFAULT_TRANSACTION_STATUS, FORMAT_STR
@@ -7,6 +8,39 @@ from src.config import BILL_COLUMNS, EXPENSE_MAPPING, DEFAULT_EXPENSE, TRANSACTI
 class DataReader:
     def __init__(self):
         return
+
+    # def read_data(self, path):
+    #     """
+    #     遍历指定路径下的所有CSV文件，根据文件名调用不同的处理函数，
+    #     并将处理后的数据合并为一个DataFrame返回。
+    #     """
+    #     dfs = []
+
+    #     # 遍历指定路径及其子目录下的所有文件
+    #     for root, dirs, files in os.walk(path):
+    #         for file in files:
+    #             if file.endswith('.csv'):
+    #                 file_path = os.path.join(root, file)
+
+    #                 # 根据文件名中的关键词调用对应的处理函数
+    #                 if '京东' in file:
+    #                     df = self.read_data_jd(file_path)
+    #                 elif '微信' in file:
+    #                     df = self.read_data_wx(file_path)
+    #                 elif '支付宝' in file:
+    #                     df = self.read_data_zfb(file_path)
+    #                 else:
+    #                     continue  # 忽略不匹配任何关键词的文件
+
+    #                 if not df.empty:
+    #                     dfs.append(df)
+
+    #     # 合并所有处理后的DataFrame
+    #     if dfs:
+    #         return pd.concat(dfs, ignore_index=True)
+    #     else:
+    #         return pd.DataFrame()  # 返回空DataFrame，避免None引发后续错误
+
     def read_data(self,path):
         """读取数据"""
         if path.endswith('.csv'):
@@ -33,18 +67,19 @@ class DataReader:
         # 读取CSV文件，跳过前16行，这些行通常包含不必要的信息
         d_wx = pd.read_csv(path, skiprows=16, encoding='utf-8')
         # 选择数据框中的特定列，这些列包含所需的信息
-        d_wx = d_wx.iloc[:, [0,1,2,3,4,5,6,7,8,10]]
-        # 移除数据中的空格，以确保数据一致性
+        d_wx = d_wx.iloc[:, [0,1,2,3,7,6,4,5]]
+        d_wx.insert(0, '来源', '微信')
+        d_wx.insert(3, '类型细化', '待定')
+        # 移除数据中的空格，避免后续处理时出现错误
         d_wx = self.strip_in_data(d_wx)
-        # 将交易时间列转换为日期时间格式，以便于后续处理
-        d_wx.iloc[:, 0] = d_wx.iloc[:, 0].astype('datetime64[ns]')
-        # 重命名列，使其更具可读性和一致性
-        d_wx.rename(columns={'当前状态': '交易状态','支付方式': '交易方式', '金额(元)': '金额'}, inplace=True)
-        # 格式化交易时间，确保时间格式的一致性
-        d_wx['交易时间'] = pd.to_datetime(d_wx['交易时间']).dt.strftime(FORMAT_STR)
-        # 插入来源列，标识数据来自微信
-        d_wx.insert(1, '来源', "微信")
+        # 重命名列名
+        d_wx.columns = BILL_COLUMNS
+        # 清洗数据
+        d_wx = self.clean_data(d_wx)
         # 返回清洗和格式化后的数据框
+        print("数据基本信息：")
+        d_wx.info()
+        print(d_wx.loc[0])
         return d_wx
 
     def read_data_zfb(self,path):
@@ -67,10 +102,16 @@ class DataReader:
 
         # 选择特定的列进行后续处理
         d_zfb = d_zfb.iloc[:, [0,1,2,4,8,7,5,6]]
-        d_zfb.insert(0, None, '支付宝')
+        d_zfb.insert(0, '来源', '支付宝')
         d_zfb.insert(3, '类型细化', '待定')
+        # 重命名列名
+        d_zfb.columns = BILL_COLUMNS
+        # 清洗数据
+        d_zfb = self.clean_data(d_zfb)
+
         print("数据基本信息：")
         d_zfb.info()
+        print(d_zfb.loc[0])
         
         # # 将交易时间转换为 datetime 类型，便于时间处理
         # d_zfb.iloc[:, 0] = d_zfb.iloc[:, 0].astype('datetime64[ns]')
@@ -113,9 +154,49 @@ class DataReader:
         df_new.insert(1, '来源', "京东")
         return df_new
 
-    def strip_in_data(self,data):
-        """清理数据"""
-        data = data.rename(columns={col: col.strip() for col in data.columns})
-        if data.iloc[:, 6].dtype == 'object':
-            data.iloc[:, 6] = data.iloc[:, 6].str.strip().str.replace('¥', '').astype('float64')
+    def strip_in_data(self, data):
+        """
+        去除DataFrame中列名与数据中的首尾空格。
+        
+        参数:
+        data: DataFrame - 需要处理的数据
+        
+        返回:
+        DataFrame - 处理后的数据
+        """
+        # 移除列名中的前后空格
+        data.columns = data.columns.str.strip()
+        # 移除每个单元格中的前后空格
+        data = data.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
         return data
+    
+    def clean_data(self, df):
+        """
+        进一步清洗数据，包括标准化日期格式和金额字段
+        
+        参数:
+        df: DataFrame - 需要处理的数据
+        
+        返回:
+        DataFrame - 处理后的数据
+        """
+        # 清洗交易时间列
+        df['交易时间'] = pd.to_datetime(df['交易时间'], errors='coerce').dt.strftime(FORMAT_STR)
+        
+        # 清洗金额列，移除非数字字符并转换为float
+        def clean_amount(amount):
+            # 确保输入是字符串
+            if pd.isna(amount) or not isinstance(amount, (str, int, float)):
+                return amount  # 或者返回一个默认值，取决于你的需求
+            amount_str = str(amount)
+            # 移除所有非数字及小数点字符
+            cleaned_str = re.sub(r'[^\d.]', '', amount_str)
+            try:
+                return float(cleaned_str)
+            except ValueError:
+                # 如果无法转换为float，则返回NaN
+                return None
+        
+        df['金额'] = df['金额'].apply(clean_amount)
+        
+        return df
