@@ -29,3 +29,7 @@
 
 # `conda` 环境创建
 - `conda create -n pyBillEnv python=3.13.5`
+
+# 后续计划
+## 进一步清洗数据
+ - 完成 交易方式、交易状态、交易类型 的统一
