@@ -3,7 +3,7 @@ import pandas as pd
 import re
 import os
 import glob
-from src.config import BILL_COLUMNS, EXPENSE_MAPPING, DEFAULT_EXPENSE, TRANSACTION_STATUS_MAPPING, DEFAULT_TRANSACTION_STATUS, FORMAT_STR
+from src.config import BILL_COLUMNS, EXPENSE_MAPPING, DEFAULT_EXPENSE, TRANSACTION_STATUS_MAPPING, DEFAULT_TRANSACTION_STATUS, FORMAT_STR, TRANSACTION_STATUS_MAP
 
 class DataReader:
     def __init__(self):
@@ -76,7 +76,10 @@ class DataReader:
         d_wx.columns = BILL_COLUMNS
         # 清洗数据
         d_wx = self.clean_data(d_wx)
-        # 返回清洗和格式化后的数据框
+        # 返回清洗和格式化后的数据
+
+        # 统一交易状态
+        d_wx['交易状态'] = d_wx['交易状态'].apply(self.unify_transaction_status)
         print("数据基本信息：")
         d_wx.info()
         print(d_wx.loc[0])
@@ -200,3 +203,11 @@ class DataReader:
         df['金额'] = df['金额'].apply(clean_amount)
         
         return df
+    
+    def unify_transaction_status(self,raw_status):
+        """
+        统一交易状态分类
+        :param raw_status: 原始交易状态（如 "支付成功", "交易关闭"）
+        :return: 统一后的分类（"交易成功" 或 "交易失败"）
+        """
+        return TRANSACTION_STATUS_MAP.get(raw_status, "交易失败")
