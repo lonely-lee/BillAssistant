@@ -7,44 +7,44 @@ from src.config import BILL_COLUMNS, EXPENSE_MAPPING, DEFAULT_EXPENSE, TRANSACTI
 
 class DataReader:
     def __init__(self):
-        return
+        pass
 
-    # def read_data(self, path):
-    #     """
-    #     遍历指定路径下的所有CSV文件，根据文件名调用不同的处理函数，
-    #     并将处理后的数据合并为一个DataFrame返回。
-    #     """
-    #     dfs = []
+    def read_dir_data(self, path):
+        """
+        遍历指定路径下的所有CSV文件，根据文件名调用不同的处理函数，
+        并将处理后的数据合并为一个DataFrame返回。
+        """
+        dfs = []
 
-    #     # 遍历指定路径及其子目录下的所有文件
-    #     for root, dirs, files in os.walk(path):
-    #         for file in files:
-    #             if file.endswith('.csv'):
-    #                 file_path = os.path.join(root, file)
+        # 遍历指定路径及其子目录下的所有文件
+        for root, dirs, files in os.walk(path):
+            for file in files:
+                if file.endswith('.csv'):
+                    file_path = os.path.join(root, file)
 
-    #                 # 根据文件名中的关键词调用对应的处理函数
-    #                 if '京东' in file:
-    #                     df = self.read_data_jd(file_path)
-    #                 elif '微信' in file:
-    #                     df = self.read_data_wx(file_path)
-    #                 elif '支付宝' in file:
-    #                     df = self.read_data_zfb(file_path)
-    #                 else:
-    #                     continue  # 忽略不匹配任何关键词的文件
+                    # 根据文件名中的关键词调用对应的处理函数
+                    if 'bill' in file:
+                        df = self.read_data_jd(file_path)
+                    elif '微信' in file:
+                        df = self.read_data_wx(file_path)
+                    elif '支付宝' in file:
+                        df = self.read_data_zfb(file_path)
+                    else:
+                        continue  # 忽略不匹配任何关键词的文件
 
-    #                 if not df.empty:
-    #                     dfs.append(df)
+                    if not df.empty:
+                        dfs.append(df)
 
-    #     # 合并所有处理后的DataFrame
-    #     if dfs:
-    #         return pd.concat(dfs, ignore_index=True)
-    #     else:
-    #         return pd.DataFrame()  # 返回空DataFrame，避免None引发后续错误
+        # 合并所有处理后的DataFrame
+        if dfs:
+            return pd.concat(dfs, ignore_index=True)
+        else:
+            return pd.DataFrame()  # 返回空DataFrame，避免None引发后续错误
 
-    def read_data(self,path):
+    def read_sigle_data(self,path):
         """读取数据"""
         if path.endswith('.csv'):
-            if '京东' in path:
+            if 'bill' in path:
                 return self.read_data_jd(path)
             elif '微信' in path:
                 return self.read_data_wx(path)
@@ -76,13 +76,12 @@ class DataReader:
         d_wx.columns = BILL_COLUMNS
         # 清洗数据
         d_wx = self.clean_data(d_wx)
-        # 返回清洗和格式化后的数据
 
         # 统一交易状态
         d_wx['交易状态'] = d_wx['交易状态'].apply(self.unify_transaction_status)
-        print("数据基本信息：")
-        d_wx.info()
-        print(d_wx.loc[0])
+        # print("数据基本信息：")
+        # d_wx.info()
+        # print(d_wx.loc[0])
         return d_wx
 
     def read_data_zfb(self,path):
@@ -112,50 +111,36 @@ class DataReader:
         # 清洗数据
         d_zfb = self.clean_data(d_zfb)
 
-        print("数据基本信息：")
-        d_zfb.info()
-        print(d_zfb.loc[0])
+        # 统一交易状态
+        d_zfb['交易状态'] = d_zfb['交易状态'].apply(self.unify_transaction_status)
+        # print("数据基本信息：")
+        # d_zfb.info()
+        # print(d_zfb.loc[0])
         
-        # # 将交易时间转换为 datetime 类型，便于时间处理
-        # d_zfb.iloc[:, 0] = d_zfb.iloc[:, 0].astype('datetime64[ns]')
-        
-        # # 将交易金额转换为 float 类型，便于后续的数值计算
-        # d_zfb.iloc[:, 5] = d_zfb.iloc[:, 5].astype('float64')
-        
-        # # 重命名列名，使得数据更加直观易懂
-        # d_zfb.rename(columns={'交易分类': '交易类型','商品说明': '商品', '收/付款方式': '交易方式','交易订单号':'交易单号'}, inplace=True)
-        
-        # # 格式化交易时间，统一时间格式
-        # d_zfb['交易时间'] = pd.to_datetime(d_zfb['交易时间']).dt.strftime(FORMAT_STR)
-        
-        # # 插入来源列，标记数据来源于支付宝
-        # d_zfb.insert(1, '来源', "支付宝")
-        
-        # # 返回处理后的账单数据
-        # return d_zfb
+        # 返回处理后的账单数据
+        return d_zfb
 
-    def read_data_jd(file_path):
+    def read_data_jd(self,path):
         """读取京东账单"""
-        with open(file_path, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-        processed = [lines[21]] + [line.replace('\t', '') for line in lines[22:]]
-        df = pd.read_csv(StringIO(''.join(processed)), index_col=False)
-        df = df.iloc[:, [0,1,2,3,4,5,6,7, 8, 9,10]]
-        df['交易时间'] = pd.to_datetime(df['交易时间'], format=FORMAT_STR, errors='coerce').dt.strftime(FORMAT_STR)
-        df['收/支'] = df['收/支'].map(EXPENSE_MAPPING).fillna(DEFAULT_EXPENSE)
-        df['交易状态'] = df['交易状态'].map(TRANSACTION_STATUS_MAPPING).fillna(DEFAULT_TRANSACTION_STATUS)
-        df_new = pd.DataFrame(columns=BILL_COLUMNS)
-        df_new['交易时间'] = df['交易时间']
-        df_new['交易类型'] = df['交易分类']
-        df_new['交易对方'] = df['商户名称']
-        df_new['商品'] = df['交易说明']
-        df_new['收/支'] = df['收/支']
-        df_new['金额'] = df['金额']
-        df_new['交易方式'] = df['收/付款方式']
-        df_new['交易状态'] = df['交易状态']
-        df_new['交易单号'] = df['交易订单号']
-        df_new.insert(1, '来源', "京东")
-        return df_new
+        # 读取CSV文件，跳过前21行，这些行通常包含不必要的信息
+        d_jd = pd.read_csv(path, skiprows=21, encoding='utf-8')
+        # 选择数据框中的特定列，这些列包含所需的信息
+        d_jd = d_jd.iloc[:, [0,1,2,3,7,6,4,5]]
+        d_jd.insert(0, '来源', '京东')
+        d_jd.insert(3, '类型细化', '待定')
+        # 移除数据中的空格，避免后续处理时出现错误
+        d_jd = self.strip_in_data(d_jd)
+        # 重命名列名
+        d_jd.columns = BILL_COLUMNS
+        # 清洗数据
+        d_jd = self.clean_data(d_jd)
+
+        # 统一交易状态
+        d_jd['交易状态'] = d_jd['交易状态'].apply(self.unify_transaction_status)
+        # print("数据基本信息：")
+        # d_jd.info()
+        # print(d_jd.loc[0])
+        return d_jd
 
     def strip_in_data(self, data):
         """
