@@ -3,11 +3,126 @@ import pandas as pd
 import re
 import os
 import glob
-from src.config import BILL_COLUMNS, EXPENSE_MAPPING, DEFAULT_EXPENSE, TRANSACTION_STATUS_MAPPING, DEFAULT_TRANSACTION_STATUS, FORMAT_STR, TRANSACTION_STATUS_MAP
+import numpy as np
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.pipeline import Pipeline
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report
+import joblib
+from src.config import BILL_COLUMNS, TRANSACTION_TYPE_MAP, MODEL_PATH, FORMAT_STR, TRANSACTION_STATUS_MAP
+
+
+
+class MLTransactionClassifier:
+    def __init__(self, model_path=None):
+        """初始化分类器，可加载已有模型或创建新模型"""
+        self.model_path = model_path
+        self.pipeline = Pipeline([
+            ('vectorizer', TfidfVectorizer(ngram_range=(1, 2), stop_words='english')),
+            ('classifier', RandomForestClassifier(n_estimators=100, random_state=42))
+        ])
+        self.is_trained = False
+
+        # 新增：审核数据路径和历史训练数据
+        self.audit_data_path = audit_data_path
+        self.history_data = None
+
+        # 加载已有审核数据
+        if audit_data_path and os.path.exists(audit_data_path):
+            try:
+                self.history_data = pd.read_csv(audit_data_path)
+                print(f"已加载历史审核数据: {len(self.history_data)} 条")
+            except Exception as e:
+                print(f"加载审核数据失败: {e}")
+
+        # 尝试加载已有模型
+        if model_path and os.path.exists(model_path):
+            try:
+                self.pipeline = joblib.load(model_path)
+                self.is_trained = True
+                print(f"已加载模型: {model_path}")
+            except Exception as e:
+                print(f"加载模型失败: {e}")
+    
+    def train(self, data, save_model=True,is_incremental=False):
+        """增强版训练方法，合并三个字段作为特征"""
+        # 如果是增量训练，合并历史数据
+        if is_incremental and self.history_data is not None:
+            data = pd.concat([self.history_data, data], ignore_index=True)
+            print(f"增量训练: 使用 {len(self.history_data)} 条历史数据 + {len(data)} 条新数据")
+
+        # 合并三个字段，使用特殊分隔符保留语义边界
+        data['combined_text'] = data['交易类型'].astype(str) + ' | ' + \
+                               data['商品说明'].astype(str) + ' | ' + \
+                               data['来源'].astype(str)
+        
+        # 划分训练集和测试集
+        X = data['combined_text']
+        y = data['统一交易类型']
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        
+        # 训练模型
+        self.pipeline.fit(X_train, y_train)
+        self.is_trained = True
+        
+        # 评估模型
+        y_pred = self.pipeline.predict(X_test)
+        print("模型评估报告:")
+        print(classification_report(y_test, y_pred))
+        
+        # 保存模型
+        if save_model and self.model_path:
+            joblib.dump(self.pipeline, self.model_path)
+            print(f"模型已保存至: {self.model_path}")
+
+        # 保存更新后的审核数据
+        if save_model and self.audit_data_path:
+            data.to_csv(self.audit_data_path, index=False)
+            print(f"审核数据已保存至: {self.audit_data_path}")
+
+    def add_audit_data(self, transaction_type, product_desc, source, true_type):
+        """添加人工审核数据"""
+        new_data = pd.DataFrame({
+            '交易类型': [transaction_type],
+            '商品说明': [product_desc],
+            '来源': [source],
+            '统一交易类型': [true_type]
+        })
+        
+        if self.history_data is not None:
+            self.history_data = pd.concat([self.history_data, new_data], ignore_index=True)
+        else:
+            self.history_data = new_data
+        
+        # 保存审核数据
+        if self.audit_data_path:
+            self.history_data.to_csv(self.audit_data_path, index=False)
+    
+    def predict(self, transaction_type, product_desc, source):
+        """预测时使用三个输入"""
+        if not self.is_trained:
+            raise Exception("模型未训练")
+        
+        combined_text = f"{transaction_type} | {product_desc} | {source}"
+        return self.pipeline.predict([combined_text])[0]
+
+    def get_prediction_confidence(self, transaction_type, product_desc, source):
+        """获取预测置信度（新增方法）"""
+        combined_text = f"{transaction_type} | {product_desc} | {source}"
+        probs = self.pipeline.predict_proba([combined_text])
+        return probs.max()  # 返回最高概率作为置信度
 
 class DataReader:
     def __init__(self):
-        pass
+        ml_model_path = MODEL_PATH
+        # 初始化机器学习分类器
+        self.ml_classifier = MLTransactionClassifier(ml_model_path, audit_data_path) if ml_model_path else None
+        self.confidence_threshold = confidence_threshold
+        self.ml_classifier = MLTransactionClassifier(ml_model_path) if ml_model_path else None
+
+        # 交易类型统一化规则：目标类型 -> (原类型关键词列表, 商品说明关键词列表)
+        self.type_mapping = TRANSACTION_TYPE_MAP
 
     def read_dir_data(self, path):
         """
@@ -79,6 +194,7 @@ class DataReader:
 
         # 统一交易状态
         d_wx['交易状态'] = d_wx['交易状态'].apply(self.unify_transaction_status)
+        d_wx['交易类型'] = d_wx['交易类型'].apply(self.unify_transaction_status)
         # print("数据基本信息：")
         # d_wx.info()
         # print(d_wx.loc[0])
@@ -196,3 +312,48 @@ class DataReader:
         :return: 统一后的分类（"交易成功" 或 "交易失败"）
         """
         return TRANSACTION_STATUS_MAP.get(raw_status, "交易失败")
+    
+    def unify_transaction_type(self, row):
+        """增强版交易类型统一化，记录匹配依据和置信度"""
+        original_type = str(row['交易类型']).lower()
+        product = str(row['商品']).lower()
+        source = str(row['来源']).lower()
+        match_basis = "规则"  # 默认匹配依据为规则
+        confidence = 1.0  # 默认置信度为100%（规则匹配）
+        
+        # 1. 尝试使用ML模型
+        if self.ml_classifier and self.ml_classifier.is_trained:
+            try:
+                ml_result = self.ml_classifier.predict(original_type, product, source)
+                confidence = self.ml_classifier.get_prediction_confidence(original_type, product, source)
+                
+                # 置信度高于阈值时采用ML结果
+                if confidence > self.confidence_threshold:
+                    match_basis = f"ML模型(置信度:{confidence:.2f})"
+                    return ml_result, match_basis, confidence
+            except Exception as e:
+                print(f"ML预测失败: {e}，回退到规则")
+        
+        # 2. 回退到规则匹配
+        for target_type, (type_kw, product_kw) in self.type_mapping.items():
+            match_type = False
+            match_product = False
+            
+            if any(kw in original_type for kw in type_kw):
+                match_type = True
+            if any(kw in product for kw in product_kw):
+                match_product = True
+            
+            # 规则匹配条件：类型匹配 或 商品匹配
+            if match_type or (match_product):
+                # 记录具体匹配的关键词
+                matched_keywords = []
+                if match_type:
+                    matched_keywords.extend([kw for kw in type_kw if kw in original_type])
+                if match_product:
+                    matched_keywords.extend([kw for kw in product_kw if kw in product])
+                
+                match_basis = f"规则({','.join(matched_keywords)})"
+                return target_type, match_basis, confidence
+        
+        return '其他', "规则(无匹配关键词)", confidence

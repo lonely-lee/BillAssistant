@@ -1,11 +1,10 @@
 import pandas as pd
+import os
 import openpyxl
 from openpyxl.styles import Alignment, Border, Side, Font
 from openpyxl.chart import BarChart, PieChart, Reference
 from openpyxl.utils import get_column_letter
 from src.config import SAVE_PATH
-import os
-
 
 class DataProcessor:
     def __init__(self):
@@ -22,7 +21,7 @@ class DataProcessor:
             right=Side(style='thin'), 
             top=Side(style='thin'), 
             bottom=Side(style='thin')
-        )
+        )  
 
     def process_data(self, df):
         # 检查并创建目录
