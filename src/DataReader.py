@@ -10,7 +10,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report
 import joblib
-from src.config import BILL_COLUMNS, TRANSACTION_TYPE_MAP, MODEL_PATH, FORMAT_STR, TRANSACTION_STATUS_MAP
+from src.config import BILL_COLUMNS, TRANSACTION_TYPE_MAP, MODEL_PATH, FORMAT_STR, TRANSACTION_STATUS_MAP,CONFIDENCE_THRESHOLD,AUDIT_DATA_PATH
 
 
 
@@ -25,13 +25,13 @@ class MLTransactionClassifier:
         self.is_trained = False
 
         # 新增：审核数据路径和历史训练数据
-        self.audit_data_path = audit_data_path
+        self.audit_data_path = AUDIT_DATA_PATH
         self.history_data = None
 
         # 加载已有审核数据
-        if audit_data_path and os.path.exists(audit_data_path):
+        if AUDIT_DATA_PATH and os.path.exists(AUDIT_DATA_PATH):
             try:
-                self.history_data = pd.read_csv(audit_data_path)
+                self.history_data = pd.read_csv(AUDIT_DATA_PATH)
                 print(f"已加载历史审核数据: {len(self.history_data)} 条")
             except Exception as e:
                 print(f"加载审核数据失败: {e}")
@@ -117,8 +117,8 @@ class DataReader:
     def __init__(self):
         ml_model_path = MODEL_PATH
         # 初始化机器学习分类器
-        self.ml_classifier = MLTransactionClassifier(ml_model_path, audit_data_path) if ml_model_path else None
-        self.confidence_threshold = confidence_threshold
+        self.ml_classifier = MLTransactionClassifier(ml_model_path) if ml_model_path else None
+        self.confidence_threshold = CONFIDENCE_THRESHOLD
         self.ml_classifier = MLTransactionClassifier(ml_model_path) if ml_model_path else None
 
         # 交易类型统一化规则：目标类型 -> (原类型关键词列表, 商品说明关键词列表)

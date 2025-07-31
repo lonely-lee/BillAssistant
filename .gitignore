@@ -1,4 +1,5 @@
 .venv/
 .vscode
+data/
 ./src/__pycache__
 src/__pycache__

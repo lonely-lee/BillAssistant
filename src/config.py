@@ -146,3 +146,5 @@ TRANSACTION_TYPE_MAP = {
 
 # 机器学习模型保存地址
 MODEL_PATH = 'transaction_model.pkl'
+AUDIT_DATA_PATH = 'audit_data.csv'
+CONFIDENCE_THRESHOLD = 0.8
