@@ -17,6 +17,7 @@ from src.config import BILL_COLUMNS, TRANSACTION_TYPE_MAP, MODEL_PATH, FORMAT_ST
 class MLTransactionClassifier:
     def __init__(self, model_path=None):
         """初始化分类器，可加载已有模型或创建新模型"""
+        print("初始化分类器...")
         self.model_path = model_path
         self.pipeline = Pipeline([
             ('vectorizer', TfidfVectorizer(ngram_range=(1, 2), stop_words='english')),
@@ -32,6 +33,7 @@ class MLTransactionClassifier:
         if AUDIT_DATA_PATH and os.path.exists(AUDIT_DATA_PATH):
             try:
                 self.history_data = pd.read_csv(AUDIT_DATA_PATH)
+                # self.history_data = pd.read_csv(AUDIT_DATA_PATH, encoding='gbk')
                 print(f"已加载历史审核数据: {len(self.history_data)} 条")
             except Exception as e:
                 print(f"加载审核数据失败: {e}")
@@ -44,6 +46,9 @@ class MLTransactionClassifier:
                 print(f"已加载模型: {model_path}")
             except Exception as e:
                 print(f"加载模型失败: {e}")
+        else:
+            print("未找到模型，将创建新模型")
+            self.train(self.history_data)
     
     def train(self, data, save_model=True,is_incremental=False):
         """增强版训练方法，合并三个字段作为特征"""
@@ -52,15 +57,16 @@ class MLTransactionClassifier:
             data = pd.concat([self.history_data, data], ignore_index=True)
             print(f"增量训练: 使用 {len(self.history_data)} 条历史数据 + {len(data)} 条新数据")
 
-        # 合并三个字段，使用特殊分隔符保留语义边界
-        data['combined_text'] = data['交易类型'].astype(str) + ' | ' + \
-                               data['商品说明'].astype(str) + ' | ' + \
-                               data['来源'].astype(str)
+        # 合并四个字段，使用特殊分隔符保留语义边界
+        data['combined_text'] = data['原交易类型'].astype(str) + ' | ' + \
+                               data['商品'].astype(str) + ' | ' + \
+                               data['来源'].astype(str) + ' | ' + \
+                               data['交易对方'].astype(str)
         
         # 划分训练集和测试集
         X = data['combined_text']
-        y = data['统一交易类型']
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        y = data['交易类型']
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
         
         # 训练模型
         self.pipeline.fit(X_train, y_train)
@@ -99,12 +105,12 @@ class MLTransactionClassifier:
         if self.audit_data_path:
             self.history_data.to_csv(self.audit_data_path, index=False)
     
-    def predict(self, transaction_type, product_desc, source):
+    def predict(self, transaction_type, product_desc, source, counterparty):
         """预测时使用三个输入"""
         if not self.is_trained:
             raise Exception("模型未训练")
         
-        combined_text = f"{transaction_type} | {product_desc} | {source}"
+        combined_text = f"{transaction_type} | {product_desc} | {source} | {counterparty}"
         return self.pipeline.predict([combined_text])[0]
 
     def get_prediction_confidence(self, transaction_type, product_desc, source):
@@ -119,7 +125,6 @@ class DataReader:
         # 初始化机器学习分类器
         self.ml_classifier = MLTransactionClassifier(ml_model_path) if ml_model_path else None
         self.confidence_threshold = CONFIDENCE_THRESHOLD
-        self.ml_classifier = MLTransactionClassifier(ml_model_path) if ml_model_path else None
 
         # 交易类型统一化规则：目标类型 -> (原类型关键词列表, 商品说明关键词列表)
         self.type_mapping = TRANSACTION_TYPE_MAP
@@ -318,6 +323,7 @@ class DataReader:
         original_type = str(row['交易类型']).lower()
         product = str(row['商品']).lower()
         source = str(row['来源']).lower()
+        counterparty = str(row['交易对方']).lower()
         match_basis = "规则"  # 默认匹配依据为规则
         confidence = 1.0  # 默认置信度为100%（规则匹配）
         
