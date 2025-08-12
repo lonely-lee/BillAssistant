@@ -51,7 +51,7 @@ class MLTransactionClassifier:
             self.train(self.history_data)
     
     def train(self, data, save_model=True,is_incremental=False):
-        """增强版训练方法，合并三个字段作为特征"""
+        """增强版训练方法，合并四个字段作为特征"""
         # 如果是增量训练，合并历史数据
         if is_incremental and self.history_data is not None:
             data = pd.concat([self.history_data, data], ignore_index=True)
@@ -106,16 +106,16 @@ class MLTransactionClassifier:
             self.history_data.to_csv(self.audit_data_path, index=False)
     
     def predict(self, transaction_type, product_desc, source, counterparty):
-        """预测时使用三个输入"""
+        """预测时使用四个输入"""
         if not self.is_trained:
             raise Exception("模型未训练")
         
         combined_text = f"{transaction_type} | {product_desc} | {source} | {counterparty}"
         return self.pipeline.predict([combined_text])[0]
 
-    def get_prediction_confidence(self, transaction_type, product_desc, source):
+    def get_prediction_confidence(self, transaction_type, product_desc, source, counterparty):
         """获取预测置信度（新增方法）"""
-        combined_text = f"{transaction_type} | {product_desc} | {source}"
+        combined_text = f"{transaction_type} | {product_desc} | {source} | {counterparty}"
         probs = self.pipeline.predict_proba([combined_text])
         return probs.max()  # 返回最高概率作为置信度
 
@@ -135,10 +135,10 @@ class DataReader:
         并将处理后的数据合并为一个DataFrame返回。
         """
         dfs = []
-
         # 遍历指定路径及其子目录下的所有文件
         for root, dirs, files in os.walk(path):
             for file in files:
+                print(f"正在处理文件: {file}")
                 if file.endswith('.csv'):
                     file_path = os.path.join(root, file)
 
@@ -184,6 +184,7 @@ class DataReader:
         - 该函数会自动将交易时间列转换为日期时间格式，以便于后续处理。
         - 该函数会自动将收/支列转换为枚举类型，并使用默认值填充缺失值。
         """
+        print("正在处理文件:", path)
         # 读取CSV文件，跳过前16行，这些行通常包含不必要的信息
         d_wx = pd.read_csv(path, skiprows=16, encoding='utf-8')
         # 选择数据框中的特定列，这些列包含所需的信息
@@ -199,10 +200,11 @@ class DataReader:
 
         # 统一交易状态
         d_wx['交易状态'] = d_wx['交易状态'].apply(self.unify_transaction_status)
-        d_wx['交易类型'] = d_wx['交易类型'].apply(self.unify_transaction_status)
-        # print("数据基本信息：")
-        # d_wx.info()
-        # print(d_wx.loc[0])
+        d_wx['新交易类型'] = d_wx.apply(self.unify_transaction_type, axis=1)
+        print("数据基本信息：")
+        d_wx.info()
+        print(d_wx.loc[0])
+        print(d_wx)
         return d_wx
 
     def read_data_zfb(self,path):
@@ -234,9 +236,11 @@ class DataReader:
 
         # 统一交易状态
         d_zfb['交易状态'] = d_zfb['交易状态'].apply(self.unify_transaction_status)
-        # print("数据基本信息：")
-        # d_zfb.info()
-        # print(d_zfb.loc[0])
+        d_zfb['新交易类型'] = d_zfb.apply(self.unify_transaction_type, axis=1)
+        print("数据基本信息：")
+        d_zfb.info()
+        print(d_zfb.loc[0])
+        print(d_zfb)
         
         # 返回处理后的账单数据
         return d_zfb
@@ -258,9 +262,11 @@ class DataReader:
 
         # 统一交易状态
         d_jd['交易状态'] = d_jd['交易状态'].apply(self.unify_transaction_status)
-        # print("数据基本信息：")
-        # d_jd.info()
-        # print(d_jd.loc[0])
+        d_jd['新交易类型'] = d_jd.apply(self.unify_transaction_type, axis=1)
+        print("数据基本信息：")
+        d_jd.info()
+        print(d_jd.loc[0])
+        print(d_jd)
         return d_jd
 
     def strip_in_data(self, data):
@@ -330,8 +336,8 @@ class DataReader:
         # 1. 尝试使用ML模型
         if self.ml_classifier and self.ml_classifier.is_trained:
             try:
-                ml_result = self.ml_classifier.predict(original_type, product, source)
-                confidence = self.ml_classifier.get_prediction_confidence(original_type, product, source)
+                ml_result = self.ml_classifier.predict(original_type, product, source, counterparty)
+                confidence = self.ml_classifier.get_prediction_confidence(original_type, product, source, counterparty)
                 
                 # 置信度高于阈值时采用ML结果
                 if confidence > self.confidence_threshold:

@@ -11,14 +11,14 @@ def main():
         for arg in input_args:
             print(arg)
     # 读取数据
-    zfb_files = r'E:\myselfProgram\billHanler\BillAssistant\data\支付宝交易明细(20250401-20250430).csv'
+    zfb_files = r'E:\生活\账单\scripts\data\支付宝交易明细(20250401-20250430).csv'
     wx_files = r'E:\myselfProgram\billHanler\BillAssistant\data\微信支付账单(20250401-20250430)——【解压密码可在微信支付公众号查看】.csv'
     jd_files = r'E:\myselfProgram\billHanler\BillAssistant\data\bill_20240303111234011_712.csv'
-    data_dir = r'E:\myselfProgram\billHanler\BillAssistant\data'
+    data_dir = r'E:\生活\账单\scripts\data'
     data_reader = DataReader()
 
-    # # 如果执行脚本输入参数，例如 reprocess 即：python main.py --reprocess，则重新载入修改后的账单数据，重新生成账单图片（主要修改带人工确认选项）
-    # df_total = data_reader.read_dir_data(data_dir)
+    # 如果执行脚本输入参数，例如 reprocess 即：python main.py --reprocess，则重新载入修改后的账单数据，重新生成账单图片（主要修改带人工确认选项）
+    df_total = data_reader.read_dir_data(data_dir)
     # print("数据基本信息：")
     # df_total.info()
     # print(df_total.loc[0])
