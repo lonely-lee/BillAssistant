@@ -48,9 +48,9 @@ class MLTransactionClassifier:
                 print(f"加载模型失败: {e}")
         else:
             print("未找到模型，将创建新模型")
-            self.train(self.history_data)
+            self.train(self.history_data,save_data=False)
     
-    def train(self, data, save_model=True,is_incremental=False):
+    def train(self, data, save_model=True,save_data=True,is_incremental=False):
         """增强版训练方法，合并四个字段作为特征"""
         # 如果是增量训练，合并历史数据
         if is_incremental and self.history_data is not None:
@@ -83,8 +83,9 @@ class MLTransactionClassifier:
             print(f"模型已保存至: {self.model_path}")
 
         # 保存更新后的审核数据
-        if save_model and self.audit_data_path:
-            data.to_csv(self.audit_data_path, index=False)
+        if save_data and self.audit_data_path:
+            columns_to_save = ['交易类型', '原交易类型', '商品', '来源', '交易对方']
+            data[columns_to_save].to_csv(self.audit_data_path, index=False)
             print(f"审核数据已保存至: {self.audit_data_path}")
 
     def add_audit_data(self, transaction_type, product_desc, source, true_type):
