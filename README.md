@@ -69,3 +69,30 @@
  - 完成 交易方式、交易状态、交易类型 的统一
  - 清洗方法：
  为了统一不同来源账单（支付宝、微信、京东）的交易类型，并将其归类为预定义的统一分类（如“交通出行”、“餐饮美食”等），可以采用以下结构化的方法来实现：
+
+## 使用方法
+### 运行环境
+- python 3.13.5
+- conda
+- pip
+- 暂略
+### 运行方法
+- python main.py [OPTION]
+- OPTION:
+- -h, --help            show this help message and exit
+- -d                    Read pre-processed CSV files from the default path in config, write to Excel, and generate plots
+- -t                    Train a model using training data from config and save the model
+- -n                    Add manually reviewed bill data to the training dataset
+
+a: 读取初始账单，写为xlsx文件，并画图
+d 读取默认路径下处理好的csv文件，写为xlsx文件，并画图
+具体操作为：读取config下的配置的文件路径，然后读取数据，写入config下配置的xlsx文件，并画图
+t：训练模型，读取默认的训练数据，保存模型
+具体操作为：读取config下的配置的训练数据文件路径，然后读取数据，训练模型，保存模型
+n：新增训练数据，将之前处理的账单数据，经人工审核筛选，保存为csv文件，并添加到训练数据中
+
+读取配置路径下的模型路径以及训练数据路径
+如果模型不存在，则训练模型，并保存
+然后读取初始账单数据，并使用模型进行预测，将初次处理的数据保存为csv文件，并提取交易类型分类所需那四列，保存为待新增训练数据csv文件
+人工审核修改数据：审核初次处理的数据，审核待新增的训练数据
+然后将审核后的数据读取，保存为xlsx文件，并绘制图片，若需要新增数据训练模型，则训练模型
