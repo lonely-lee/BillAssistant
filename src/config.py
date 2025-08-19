@@ -150,3 +150,9 @@ TRANSACTION_TYPE_MAP = {
 MODEL_PATH = './3rd/transaction_model.pkl'
 AUDIT_DATA_PATH = './3rd/audit_data.csv' # 训练数据集
 CONFIDENCE_THRESHOLD = 0.8
+
+# 初步处理的数据保存路径
+PREPROCESS_DATA_PATH = './3rd/preprocess_data.csv'
+
+# 待新增的训练数据
+NEW_TRAIN_DATA = './3rd/new_train_data.csv'
