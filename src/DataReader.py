@@ -10,7 +10,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report
 import joblib
-from src.config import BILL_COLUMNS, TRANSACTION_TYPE_MAP, MODEL_PATH, FORMAT_STR, TRANSACTION_STATUS_MAP,CONFIDENCE_THRESHOLD,AUDIT_DATA_PATH, PREPROCESS_DATA_PATH, NEW_TRAIN_DATA
+from src.config import INIT_BILL_PATH,BILL_COLUMNS, TRANSACTION_TYPE_MAP, MODEL_PATH, FORMAT_STR, TRANSACTION_STATUS_MAP,CONFIDENCE_THRESHOLD,AUDIT_DATA_PATH, PREPROCESS_DATA_PATH, NEW_TRAIN_DATA
 
 
 
@@ -58,14 +58,14 @@ class MLTransactionClassifier:
             print(f"增量训练: 使用 {len(self.history_data)} 条历史数据 + {len(added_data)} 条新数据")
 
         # 合并四个字段，使用特殊分隔符保留语义边界
-        train_data['combined_text'] = train_data['原交易类型'].astype(str) + ' | ' + \
+        train_data['combined_text'] = train_data['交易类型'].astype(str) + ' | ' + \
                                train_data['商品'].astype(str) + ' | ' + \
                                train_data['来源'].astype(str) + ' | ' + \
                                train_data['交易对方'].astype(str)
         
         # 划分训练集和测试集
         X = train_data['combined_text']
-        y = train_data['交易类型']
+        y = train_data['新交易类型']
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
         
         # 训练模型
@@ -84,17 +84,17 @@ class MLTransactionClassifier:
 
         # 保存更新后的审核数据
         if save_data and self.audit_data_path:
-            columns_to_save = ['交易类型', '原交易类型', '商品', '来源', '交易对方']
+            columns_to_save = ['新交易类型', '交易类型', '商品', '来源', '交易对方']
             train_data[columns_to_save].to_csv(self.audit_data_path, index=False)
             print(f"审核数据已保存至: {self.audit_data_path}")
 
     def add_signal_audit_data(self, transaction_type, product_desc, source, true_type):
         """添加人工审核数据"""
         new_data = pd.DataFrame({
+            '新交易类型': [true_type],
             '交易类型': [transaction_type],
-            '商品说明': [product_desc],
-            '来源': [source],
-            '统一交易类型': [true_type]
+            '商品': [product_desc],
+            '来源': [source]
         })
         
         if self.history_data is not None:
@@ -141,12 +141,15 @@ class DataReader:
         # 交易类型统一化规则：目标类型 -> (原类型关键词列表, 商品说明关键词列表)
         self.type_mapping = TRANSACTION_TYPE_MAP
 
-    def read_dir_data(self, path):
+    def read_dir_data(self, path=None):
         """
         遍历指定路径下的所有CSV文件，根据文件名调用不同的处理函数，
         并将处理后的数据合并为一个DataFrame返回。
         """
         dfs = []
+        if path is None:
+            path = INIT_BILL_PATH
+        print(f"正在处理目录：{path}")
         # 遍历指定路径及其子目录下的所有文件
         for root, dirs, files in os.walk(path):
             for file in files:
@@ -171,7 +174,7 @@ class DataReader:
         if dfs:
             total_df = pd.concat(dfs, ignore_index=True)
             total_df.to_csv(PREPROCESS_DATA_PATH, index=False)
-            columns_to_save = ['交易状态', '新交易类型', '交易状态']
+            columns_to_save = ['新交易类型', '交易类型', '商品', '来源', '交易对方']
             filtered_df = total_df.loc[:, columns_to_save]  # 使用loc确保保留所有指定列（包括重复列名）
             filtered_df.to_csv(NEW_TRAIN_DATA, index=False)
             return total_df
@@ -217,7 +220,11 @@ class DataReader:
 
         # 统一交易状态
         d_wx['交易状态'] = d_wx['交易状态'].apply(self.unify_transaction_status)
-        d_wx['新交易类型'] = d_wx.apply(self.unify_transaction_type, axis=1)
+        d_wx[['新交易类型', '交易类型匹配规则', '交易类型置信度']] = d_wx.apply(
+            self.unify_transaction_type,
+            axis=1,
+            result_type='expand'
+        )     
         print("数据基本信息：")
         d_wx.info()
         print(d_wx.loc[0])
@@ -253,7 +260,11 @@ class DataReader:
 
         # 统一交易状态
         d_zfb['交易状态'] = d_zfb['交易状态'].apply(self.unify_transaction_status)
-        d_zfb['新交易类型'] = d_zfb.apply(self.unify_transaction_type, axis=1)
+        d_zfb[['新交易类型', '交易类型匹配规则', '交易类型置信度']] = d_zfb.apply(
+            self.unify_transaction_type,
+            axis=1,
+            result_type='expand'
+        )
         print("数据基本信息：")
         d_zfb.info()
         print(d_zfb.loc[0])
@@ -279,7 +290,11 @@ class DataReader:
 
         # 统一交易状态
         d_jd['交易状态'] = d_jd['交易状态'].apply(self.unify_transaction_status)
-        d_jd['新交易类型'] = d_jd.apply(self.unify_transaction_type, axis=1)
+        d_jd[['新交易类型', '交易类型匹配规则', '交易类型置信度']] = d_jd.apply(
+            self.unify_transaction_type,
+            axis=1,
+            result_type='expand'
+        )
         print("数据基本信息：")
         d_jd.info()
         print(d_jd.loc[0])
@@ -385,7 +400,7 @@ class DataReader:
                 match_basis = f"规则({','.join(matched_keywords)})"
                 return target_type, match_basis, confidence
         
-        return '其他', "规则(无匹配关键词)", confidence
+        return '待人工审核', "规则(无匹配关键词)", confidence
     
 
     def tringger_ml_training(self):

@@ -86,12 +86,6 @@ TRANSACTION_STATUS_MAPPING = {
 DEFAULT_EXPENSE = '待定'
 DEFAULT_TRANSACTION_STATUS = '待定'
 
-# 文件路径配置
-ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-INIT_BILL_PATH = os.path.join(ROOT_DIR, "初始账单", "25年01月份")
-OUTPUT_DIR = os.path.join(ROOT_DIR, "账单", "25年01月份整理")
-SAVE_PATH = os.path.join(OUTPUT_DIR, "25_01_total_bill.xlsx")
-
 # 格式定义
 FORMAT_STR = '%Y-%m-%d %H:%M:%S'
 
@@ -146,13 +140,22 @@ TRANSACTION_TYPE_MAP = {
     '其他': (['其他', '未知'], [])  # 兜底
 }
 
-# 机器学习模型保存地址
-MODEL_PATH = './3rd/transaction_model.pkl'
-AUDIT_DATA_PATH = './3rd/audit_data.csv' # 训练数据集
+# 文件路径配置
+## 工程根路径
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+## 初始账单路径
+INIT_BILL_PATH = os.path.join(ROOT_DIR, "data")
+## 处理后账单的保存路径
+OUTPUT_DIR = os.path.join(ROOT_DIR, "_output")
+### 处理后的总账单及图表
+SAVE_PATH = os.path.join(OUTPUT_DIR, "25_01_total_bill.xlsx")
+### 待新增的训练数据
+NEW_TRAIN_DATA = os.path.join(OUTPUT_DIR, "tmp_new_train.csv")
+### 初步处理的数据，待人工审核
+PREPROCESS_DATA_PATH = os.path.join(OUTPUT_DIR, "tmp_processed_to_review.csv")
+
+# 机器学习模型相关配置
+THIRD_DIR = os.path.join(ROOT_DIR, "3rd")
+MODEL_PATH = os.path.join(THIRD_DIR, "transaction_model.pkl")
+AUDIT_DATA_PATH = os.path.join(THIRD_DIR, "audit_data.csv") # 训练数据集
 CONFIDENCE_THRESHOLD = 0.8
-
-# 初步处理的数据保存路径
-PREPROCESS_DATA_PATH = './3rd/preprocess_data.csv'
-
-# 待新增的训练数据
-NEW_TRAIN_DATA = './3rd/new_train_data.csv'

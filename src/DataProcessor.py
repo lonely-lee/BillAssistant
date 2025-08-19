@@ -4,9 +4,15 @@ import openpyxl
 from openpyxl.styles import Alignment, Border, Side, Font
 from openpyxl.chart import BarChart, PieChart, Reference
 from openpyxl.utils import get_column_letter
-from src.config import SAVE_PATH
+from src.config import SAVE_PATH, PREPROCESS_DATA_PATH
 
 class DataProcessor:
+    """
+    数据处理类
+    1. 数据预处理：针对收入支出数据进行计算
+    2. 数据可视化
+    """
+
     def __init__(self):
         # 创建粗边框样式
         self.thick_border = Border(
@@ -23,8 +29,10 @@ class DataProcessor:
             bottom=Side(style='thin')
         )  
 
-    def process_data(self, df):
+    def process_data(self, df = None):
         # 检查并创建目录
+        if df is None:
+            df = pd.read_csv(PREPROCESS_DATA_PATH)
         dir_path = os.path.dirname(SAVE_PATH)
         if not os.path.exists (dir_path):
             os.makedirs (dir_path, exist_ok=True) # exist_ok=True 避免目录已存在时出错
@@ -77,7 +85,7 @@ class DataProcessor:
 
             # 计算各交易类型收支情况
             success_df = df[df['交易状态'] == '交易成功'].copy()
-            type_stats = success_df.groupby(['交易类型', '收/支'])['金额'].sum().unstack(fill_value=0)
+            type_stats = success_df.groupby(['新交易类型', '收/支'])['金额'].sum().unstack(fill_value=0)
             
             # 确保包含所有收支类型列
             if '收入' not in type_stats.columns:
@@ -93,7 +101,7 @@ class DataProcessor:
             
             # 写入交易类型统计标题
             ansly_sheet.append(['各交易类型收支统计'])
-            stats_columns = ['交易类型', '总收入', '总支出', '净支出']
+            stats_columns = ['新交易类型', '总收入', '总支出', '净支出']
             stats_max_col = len(stats_columns)
             
             # 合并标题单元格
@@ -134,7 +142,7 @@ class DataProcessor:
             # bar_chart.type = 'col'
             # bar_chart.title = '各交易类型收支对比'
             # bar_chart.y_axis.title = '金额'
-            # bar_chart.x_axis.title = '交易类型'
+            # bar_chart.x_axis.title = '新交易类型'
             
             # # 设置数据范围
             # data = Reference(ansly_sheet, min_col=2, min_row=type_data_start_row - 1, 
