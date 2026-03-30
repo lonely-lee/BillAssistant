@@ -7,16 +7,18 @@ import os
 来源：支付宝、微信、京东
 交易时间：
 交易类型：交通出行、餐饮美食、投资理财、生活开支、日用百货、文化休闲、鞋帽服饰、消费还款、其他
- - 交通出行：打车、公交、地铁、燃油、火车等
- - 餐饮美食：三餐、零食、聚餐
- - 投资理财：基金、股票，改行后续剔除，专门做一个投资表格
- - 生活日用：洗漱用品、护肤精华、厨卫用品、生活电器、超市购物、水电燃气费、电话费、宽带费、租房
- - 鞋帽服饰：衣服、鞋子、行李箱、背包、袜子
- - 文化休闲：书籍、游戏、博物馆
- - 数码电子：手机电脑游戏机、相机、镜头
- - 消费还款：花呗、招商信用卡、白条
- - 其他：
- - 待人工确认：
+ - 交通出行 ：打车、公交、地铁、燃油、火车等
+ - 餐饮美食 ：三餐、零食、聚餐
+ - 投资理财 ：基金、股票，改行后续剔除，专门做一个投资表格
+ - 生活日用 ：洗漱用品、护肤精华、厨卫用品、生活电器、超市购物、水电燃气费、电话费、宽带费、租房、停车费
+ - 鞋帽服饰 ：衣服、鞋子、行李箱、背包、袜子
+ - 文化休闲 ：书籍、游戏、博物馆
+ - 数码电子 ：手机电脑游戏机、相机、镜头、及相关配件
+ - 消费还款 ：花呗、招商信用卡、白条
+ - 转账还款 ：聚餐等
+ - 其他 ：
+ - 待人工确认 ：
+ - 后续考虑是否新增`临时`交易类型，例如临时医院、突发事件等
 类型细化：预留后续精细化
 交易对方：商家名称
 商品：商品名称或说明
@@ -84,12 +86,6 @@ TRANSACTION_STATUS_MAPPING = {
 DEFAULT_EXPENSE = '待定'
 DEFAULT_TRANSACTION_STATUS = '待定'
 
-# 文件路径配置
-ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-INIT_BILL_PATH = os.path.join(ROOT_DIR, "初始账单", "25年01月份")
-OUTPUT_DIR = os.path.join(ROOT_DIR, "账单", "25年01月份整理")
-SAVE_PATH = os.path.join(OUTPUT_DIR, "25_01_total_bill.xlsx")
-
 # 格式定义
 FORMAT_STR = '%Y-%m-%d %H:%M:%S'
 
@@ -144,5 +140,22 @@ TRANSACTION_TYPE_MAP = {
     '其他': (['其他', '未知'], [])  # 兜底
 }
 
-# 机器学习模型保存地址
-MODEL_PATH = 'transaction_model.pkl'
+# 文件路径配置
+## 工程根路径
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+## 初始账单路径
+INIT_BILL_PATH = os.path.join(ROOT_DIR, "data")
+## 处理后账单的保存路径
+OUTPUT_DIR = os.path.join(ROOT_DIR, "_output")
+### 处理后的总账单及图表
+SAVE_PATH = os.path.join(OUTPUT_DIR, "25_01_total_bill.xlsx")
+### 待新增的训练数据
+NEW_TRAIN_DATA = os.path.join(OUTPUT_DIR, "tmp_new_train.csv")
+### 初步处理的数据，待人工审核
+PREPROCESS_DATA_PATH = os.path.join(OUTPUT_DIR, "tmp_processed_to_review.csv")
+
+# 机器学习模型相关配置
+THIRD_DIR = os.path.join(ROOT_DIR, "3rd")
+MODEL_PATH = os.path.join(THIRD_DIR, "transaction_model.pkl")
+AUDIT_DATA_PATH = os.path.join(THIRD_DIR, "audit_data.csv") # 训练数据集
+CONFIDENCE_THRESHOLD = 0.8

@@ -10,13 +10,14 @@ from sklearn.pipeline import Pipeline
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report
 import joblib
-from src.config import BILL_COLUMNS, TRANSACTION_TYPE_MAP, MODEL_PATH, FORMAT_STR, TRANSACTION_STATUS_MAP
+from src.config import INIT_BILL_PATH,BILL_COLUMNS, TRANSACTION_TYPE_MAP, MODEL_PATH, FORMAT_STR, TRANSACTION_STATUS_MAP,CONFIDENCE_THRESHOLD,AUDIT_DATA_PATH, PREPROCESS_DATA_PATH, NEW_TRAIN_DATA
 
 
 
 class MLTransactionClassifier:
     def __init__(self, model_path=None):
         """初始化分类器，可加载已有模型或创建新模型"""
+        print("初始化分类器...")
         self.model_path = model_path
         self.pipeline = Pipeline([
             ('vectorizer', TfidfVectorizer(ngram_range=(1, 2), stop_words='english')),
@@ -25,13 +26,14 @@ class MLTransactionClassifier:
         self.is_trained = False
 
         # 新增：审核数据路径和历史训练数据
-        self.audit_data_path = audit_data_path
+        self.audit_data_path = AUDIT_DATA_PATH
         self.history_data = None
 
         # 加载已有审核数据
-        if audit_data_path and os.path.exists(audit_data_path):
+        if AUDIT_DATA_PATH and os.path.exists(AUDIT_DATA_PATH):
             try:
-                self.history_data = pd.read_csv(audit_data_path)
+                self.history_data = pd.read_csv(AUDIT_DATA_PATH)
+                # self.history_data = pd.read_csv(AUDIT_DATA_PATH, encoding='gbk')
                 print(f"已加载历史审核数据: {len(self.history_data)} 条")
             except Exception as e:
                 print(f"加载审核数据失败: {e}")
@@ -44,23 +46,27 @@ class MLTransactionClassifier:
                 print(f"已加载模型: {model_path}")
             except Exception as e:
                 print(f"加载模型失败: {e}")
+        else:
+            print("未找到模型，将创建新模型")
+            self.train(self.history_data,save_data=False)
     
-    def train(self, data, save_model=True,is_incremental=False):
-        """增强版训练方法，合并三个字段作为特征"""
+    def train(self, added_data, save_model=True,save_data=True,is_incremental=False):
+        """增强版训练方法，合并四个字段作为特征"""
         # 如果是增量训练，合并历史数据
         if is_incremental and self.history_data is not None:
-            data = pd.concat([self.history_data, data], ignore_index=True)
-            print(f"增量训练: 使用 {len(self.history_data)} 条历史数据 + {len(data)} 条新数据")
+            train_data = pd.concat([self.history_data, added_data], ignore_index=True)
+            print(f"增量训练: 使用 {len(self.history_data)} 条历史数据 + {len(added_data)} 条新数据")
 
-        # 合并三个字段，使用特殊分隔符保留语义边界
-        data['combined_text'] = data['交易类型'].astype(str) + ' | ' + \
-                               data['商品说明'].astype(str) + ' | ' + \
-                               data['来源'].astype(str)
+        # 合并四个字段，使用特殊分隔符保留语义边界
+        train_data['combined_text'] = train_data['交易类型'].astype(str) + ' | ' + \
+                               train_data['商品'].astype(str) + ' | ' + \
+                               train_data['来源'].astype(str) + ' | ' + \
+                               train_data['交易对方'].astype(str)
         
         # 划分训练集和测试集
-        X = data['combined_text']
-        y = data['统一交易类型']
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        X = train_data['combined_text']
+        y = train_data['新交易类型']
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
         
         # 训练模型
         self.pipeline.fit(X_train, y_train)
@@ -77,63 +83,77 @@ class MLTransactionClassifier:
             print(f"模型已保存至: {self.model_path}")
 
         # 保存更新后的审核数据
-        if save_model and self.audit_data_path:
-            data.to_csv(self.audit_data_path, index=False)
+        if save_data and self.audit_data_path:
+            columns_to_save = ['新交易类型', '交易类型', '商品', '来源', '交易对方']
+            train_data[columns_to_save].to_csv(self.audit_data_path, index=False)
             print(f"审核数据已保存至: {self.audit_data_path}")
 
-    def add_audit_data(self, transaction_type, product_desc, source, true_type):
+    def add_signal_audit_data(self, transaction_type, product_desc, source, true_type):
         """添加人工审核数据"""
         new_data = pd.DataFrame({
+            '新交易类型': [true_type],
             '交易类型': [transaction_type],
-            '商品说明': [product_desc],
-            '来源': [source],
-            '统一交易类型': [true_type]
+            '商品': [product_desc],
+            '来源': [source]
         })
         
         if self.history_data is not None:
             self.history_data = pd.concat([self.history_data, new_data], ignore_index=True)
         else:
             self.history_data = new_data
+
+    def add_audit_data(self, new_df):
+        if self.history_data is not None:
+            self.history_data = pd.concat([self.history_data, new_df], ignore_index=True)
+        else:
+            self.history_data = new_df
+        self.save_audit_data()
         
+
+    def save_audit_data(self):
+        """保存审核数据"""
         # 保存审核数据
         if self.audit_data_path:
             self.history_data.to_csv(self.audit_data_path, index=False)
     
-    def predict(self, transaction_type, product_desc, source):
-        """预测时使用三个输入"""
+    def predict(self, transaction_type, product_desc, source, counterparty):
+        """预测时使用四个输入"""
         if not self.is_trained:
             raise Exception("模型未训练")
         
-        combined_text = f"{transaction_type} | {product_desc} | {source}"
+        combined_text = f"{transaction_type} | {product_desc} | {source} | {counterparty}"
         return self.pipeline.predict([combined_text])[0]
 
-    def get_prediction_confidence(self, transaction_type, product_desc, source):
+    def get_prediction_confidence(self, transaction_type, product_desc, source, counterparty):
         """获取预测置信度（新增方法）"""
-        combined_text = f"{transaction_type} | {product_desc} | {source}"
+        combined_text = f"{transaction_type} | {product_desc} | {source} | {counterparty}"
         probs = self.pipeline.predict_proba([combined_text])
         return probs.max()  # 返回最高概率作为置信度
+
 
 class DataReader:
     def __init__(self):
         ml_model_path = MODEL_PATH
         # 初始化机器学习分类器
-        self.ml_classifier = MLTransactionClassifier(ml_model_path, audit_data_path) if ml_model_path else None
-        self.confidence_threshold = confidence_threshold
         self.ml_classifier = MLTransactionClassifier(ml_model_path) if ml_model_path else None
+        self.confidence_threshold = CONFIDENCE_THRESHOLD
 
         # 交易类型统一化规则：目标类型 -> (原类型关键词列表, 商品说明关键词列表)
         self.type_mapping = TRANSACTION_TYPE_MAP
 
-    def read_dir_data(self, path):
+    def read_dir_data(self, path=None):
         """
         遍历指定路径下的所有CSV文件，根据文件名调用不同的处理函数，
         并将处理后的数据合并为一个DataFrame返回。
         """
         dfs = []
-
+        if path is None:
+            path = INIT_BILL_PATH
+        print(f"正在处理目录：{path}")
         # 遍历指定路径及其子目录下的所有文件
         for root, dirs, files in os.walk(path):
             for file in files:
+                print(f"正在处理文件: {file}")
                 if file.endswith('.csv'):
                     file_path = os.path.join(root, file)
 
@@ -152,7 +172,12 @@ class DataReader:
 
         # 合并所有处理后的DataFrame
         if dfs:
-            return pd.concat(dfs, ignore_index=True)
+            total_df = pd.concat(dfs, ignore_index=True)
+            total_df.to_csv(PREPROCESS_DATA_PATH, index=False)
+            columns_to_save = ['新交易类型', '交易类型', '商品', '来源', '交易对方']
+            filtered_df = total_df.loc[:, columns_to_save]  # 使用loc确保保留所有指定列（包括重复列名）
+            filtered_df.to_csv(NEW_TRAIN_DATA, index=False)
+            return total_df
         else:
             return pd.DataFrame()  # 返回空DataFrame，避免None引发后续错误
 
@@ -179,6 +204,7 @@ class DataReader:
         - 该函数会自动将交易时间列转换为日期时间格式，以便于后续处理。
         - 该函数会自动将收/支列转换为枚举类型，并使用默认值填充缺失值。
         """
+        print("正在处理文件:", path)
         # 读取CSV文件，跳过前16行，这些行通常包含不必要的信息
         d_wx = pd.read_csv(path, skiprows=16, encoding='utf-8')
         # 选择数据框中的特定列，这些列包含所需的信息
@@ -194,10 +220,15 @@ class DataReader:
 
         # 统一交易状态
         d_wx['交易状态'] = d_wx['交易状态'].apply(self.unify_transaction_status)
-        d_wx['交易类型'] = d_wx['交易类型'].apply(self.unify_transaction_status)
-        # print("数据基本信息：")
-        # d_wx.info()
-        # print(d_wx.loc[0])
+        d_wx[['新交易类型', '交易类型匹配规则', '交易类型置信度']] = d_wx.apply(
+            self.unify_transaction_type,
+            axis=1,
+            result_type='expand'
+        )     
+        print("数据基本信息：")
+        d_wx.info()
+        print(d_wx.loc[0])
+        print(d_wx)
         return d_wx
 
     def read_data_zfb(self,path):
@@ -229,9 +260,15 @@ class DataReader:
 
         # 统一交易状态
         d_zfb['交易状态'] = d_zfb['交易状态'].apply(self.unify_transaction_status)
-        # print("数据基本信息：")
-        # d_zfb.info()
-        # print(d_zfb.loc[0])
+        d_zfb[['新交易类型', '交易类型匹配规则', '交易类型置信度']] = d_zfb.apply(
+            self.unify_transaction_type,
+            axis=1,
+            result_type='expand'
+        )
+        print("数据基本信息：")
+        d_zfb.info()
+        print(d_zfb.loc[0])
+        print(d_zfb)
         
         # 返回处理后的账单数据
         return d_zfb
@@ -253,9 +290,15 @@ class DataReader:
 
         # 统一交易状态
         d_jd['交易状态'] = d_jd['交易状态'].apply(self.unify_transaction_status)
-        # print("数据基本信息：")
-        # d_jd.info()
-        # print(d_jd.loc[0])
+        d_jd[['新交易类型', '交易类型匹配规则', '交易类型置信度']] = d_jd.apply(
+            self.unify_transaction_type,
+            axis=1,
+            result_type='expand'
+        )
+        print("数据基本信息：")
+        d_jd.info()
+        print(d_jd.loc[0])
+        print(d_jd)
         return d_jd
 
     def strip_in_data(self, data):
@@ -318,14 +361,15 @@ class DataReader:
         original_type = str(row['交易类型']).lower()
         product = str(row['商品']).lower()
         source = str(row['来源']).lower()
+        counterparty = str(row['交易对方']).lower()
         match_basis = "规则"  # 默认匹配依据为规则
         confidence = 1.0  # 默认置信度为100%（规则匹配）
         
         # 1. 尝试使用ML模型
         if self.ml_classifier and self.ml_classifier.is_trained:
             try:
-                ml_result = self.ml_classifier.predict(original_type, product, source)
-                confidence = self.ml_classifier.get_prediction_confidence(original_type, product, source)
+                ml_result = self.ml_classifier.predict(original_type, product, source, counterparty)
+                confidence = self.ml_classifier.get_prediction_confidence(original_type, product, source, counterparty)
                 
                 # 置信度高于阈值时采用ML结果
                 if confidence > self.confidence_threshold:
@@ -356,4 +400,31 @@ class DataReader:
                 match_basis = f"规则({','.join(matched_keywords)})"
                 return target_type, match_basis, confidence
         
-        return '其他', "规则(无匹配关键词)", confidence
+        return '待人工审核', "规则(无匹配关键词)", confidence
+    
+
+    def tringger_ml_training(self):
+        """
+        触发ML模型训练：
+            脚本处理后的数据，经人工修改处理，并触发ML模型训练
+        """
+        if NEW_TRAIN_DATA and os.path.exists(NEW_TRAIN_DATA):
+            try:
+                added_train_data = pd.read_csv(NEW_TRAIN_DATA)
+                # self.history_data = pd.read_csv(AUDIT_DATA_PATH, encoding='gbk')
+                print(f"已加载历史审核数据: {len(added_train_data)} 条")
+            except Exception as e:
+                print(f"加载审核数据失败: {e}")
+                return
+        if self.ml_classifier:
+            self.ml_classifier.train(added_train_data)
+
+    def add_new_train_data(self):
+        if NEW_TRAIN_DATA and os.path.exists(NEW_TRAIN_DATA):
+            try:
+                new_df = pd.read_csv(NEW_TRAIN_DATA)
+                # self.history_data = pd.read_csv(AUDIT_DATA_PATH, encoding='gbk')
+                print(f"已加载待新增训练数据: {len(new_df)} 条")
+            except Exception as e:
+                print(f"加载待新增训练数据失败: {e}")
+        self.ml_classifier.add_audit_data(new_df)
